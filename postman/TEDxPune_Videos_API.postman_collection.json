@@ -1,0 +1,223 @@
+{
+  "info": {
+    "name": "TEDxPune - Videos API",
+    "description": "YouTube Playlist & Video management APIs for TEDxPune backend.\n\nSetup:\n1. Run 'Admin Login' first to get a token\n2. The token auto-saves to the {{token}} variable\n3. Set {{base_url}} to your server (default: http://localhost:3000/api/v1)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000/api/v1" },
+    { "key": "token", "value": "" },
+    { "key": "playlist_id", "value": "" },
+    { "key": "video_id", "value": "" },
+    { "key": "sync_secret", "value": "tedxpune-sync-2024" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.accessToken) {",
+                  "  pm.collectionVariables.set('token', res.accessToken);",
+                  "  console.log('Token saved!');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "url": "{{base_url}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@tedxpune.com\",\n  \"password\": \"Admin@123\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Playlist CRUD",
+      "item": [
+        {
+          "name": "Create Playlist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "  pm.collectionVariables.set('playlist_id', res.id);",
+                  "  console.log('Playlist ID saved:', res.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/videos/admin/playlists",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"playlistName\": \"TEDx Pune Talks 2025\",\n  \"playlistUrl\": \"https://www.youtube.com/playlist?list=PLvNngG3cuNDj9_ArGJdcY7vgj0U588UXH\",\n  \"category\": \"Talks\",\n  \"displayOrder\": 1,\n  \"isActive\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "List All Playlists (Admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/videos/admin/playlists"
+          }
+        },
+        {
+          "name": "Update Playlist",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/videos/admin/playlists/{{playlist_id}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"playlistName\": \"TEDx Pune — Updated\",\n  \"category\": \"Featured Talks\",\n  \"displayOrder\": 0\n}"
+            }
+          }
+        },
+        {
+          "name": "Deactivate Playlist",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/videos/admin/playlists/{{playlist_id}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Activate Playlist",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/videos/admin/playlists/{{playlist_id}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Playlist",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/videos/admin/playlists/{{playlist_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Sync",
+      "item": [
+        {
+          "name": "Sync All Playlists (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/videos/admin/playlists/sync"
+          }
+        },
+        {
+          "name": "Cron Sync (x-sync-secret)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "url": "{{base_url}}/videos/sync",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-sync-secret", "value": "{{sync_secret}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Read",
+      "item": [
+        {
+          "name": "List Active Playlists",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.length > 0) {",
+                  "  pm.collectionVariables.set('playlist_id', res[0].id);",
+                  "  console.log('First playlist ID saved:', res[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/videos/playlists"
+          }
+        },
+        {
+          "name": "List Videos for Playlist",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.items && res.items.length > 0) {",
+                  "  pm.collectionVariables.set('video_id', res.items[0].id);",
+                  "  console.log('First video ID saved:', res.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/videos/playlists/{{playlist_id}}/videos?page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["videos", "playlists", "{{playlist_id}}", "videos"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Video Details",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/videos/videos/{{video_id}}"
+          }
+        }
+      ]
+    }
+  ]
+}
