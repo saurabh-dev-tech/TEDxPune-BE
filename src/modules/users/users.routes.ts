@@ -87,7 +87,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
   );
 
   fastify.get<{ Querystring: { page?: number; limit?: number } }>(
-    '/',
+    '/directory',
     {
       preHandler: [fastify.authenticate],
       schema: {

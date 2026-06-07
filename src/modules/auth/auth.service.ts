@@ -1,5 +1,16 @@
 import type { SupabaseClient, User as SupabaseUser } from '@supabase/supabase-js';
 import type { FastifyInstance } from 'fastify';
+import { createHash } from 'crypto';
+
+/**
+ * Generate a Gravatar URL from an email address.
+ * Falls back to a UI Avatars URL if Gravatar has no image (d=404 would show nothing).
+ * Using `d=blank` so the app's initial-letter fallback takes over when there's no Gravatar.
+ */
+function gravatarUrl(email: string, size = 200): string {
+  const hash = createHash('md5').update(email.trim().toLowerCase()).digest('hex');
+  return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=mp`;
+}
 
 // ─── Shared profile type for all OAuth providers ───────────────────────────────
 export type AuthProvider = 'linkedin' | 'google' | 'apple';
@@ -50,6 +61,31 @@ export class AuthService {
     }
 
     return data.id as string;
+  }
+
+  /**
+   * Resolve the best avatar URL for a user.
+   * Priority: existing DB value → Supabase metadata (Google/Apple) → Gravatar.
+   */
+  private resolveAvatarUrl(
+    dbAvatar: string | null | undefined,
+    supabaseUser: SupabaseUser | null,
+    email: string,
+  ): string {
+    // 1. Already has a valid URL in the DB
+    if (dbAvatar && dbAvatar.startsWith('http')) return dbAvatar;
+
+    // 2. Pull from Supabase user metadata (Google/Apple sign-in sets this)
+    if (supabaseUser) {
+      const metaAvatar =
+        (supabaseUser.user_metadata?.avatar_url as string) ??
+        (supabaseUser.user_metadata?.picture as string) ??
+        null;
+      if (metaAvatar && metaAvatar.startsWith('http')) return metaAvatar;
+    }
+
+    // 3. Gravatar fallback (works for any email, returns a generic icon if no Gravatar)
+    return gravatarUrl(email);
   }
 
   private signJwt(userId: string, tenantId: string, role: 'USER' | 'ADMIN' | 'SUPER_ADMIN'): string {
@@ -169,13 +205,20 @@ export class AuthService {
 
     if (!lookupErr && existing) {
       const row = existing as unknown as Record<string, unknown>;
+      const avatarUrl = this.resolveAvatarUrl(row.avatar_url as string | null, supabaseUser, row.email as string);
+
+      // Update avatar in DB if it was missing/junk
+      if (avatarUrl && avatarUrl !== row.avatar_url) {
+        await this.supabase.from('users').update({ avatar_url: avatarUrl }).eq('id', row.id as string);
+      }
+
       return {
         accessToken: this.signJwt(row.id as string, tenantId, row.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'),
         user: {
           id: row.id,
           fullName: row.full_name,
           email: row.email,
-          avatarUrl: (row.avatar_url as string | null) ?? null,
+          avatarUrl,
           role: row.role,
           status: row.status,
         },
@@ -196,13 +239,14 @@ export class AuthService {
 
       if (!emailErr && byEmail) {
         const row = byEmail as unknown as Record<string, unknown>;
+        const avatarUrl = this.resolveAvatarUrl(row.avatar_url as string | null, supabaseUser, email);
 
-        // Link supabase_uid so future logins are found by UID directly
-        if (!row.supabase_uid) {
-          await this.supabase
-            .from('users')
-            .update({ supabase_uid: supabaseUser.id })
-            .eq('id', row.id as string);
+        // Link supabase_uid + update avatar if missing
+        const updates: Record<string, unknown> = {};
+        if (!row.supabase_uid) updates.supabase_uid = supabaseUser.id;
+        if (avatarUrl && avatarUrl !== row.avatar_url) updates.avatar_url = avatarUrl;
+        if (Object.keys(updates).length > 0) {
+          await this.supabase.from('users').update(updates).eq('id', row.id as string);
         }
 
         return {
@@ -211,7 +255,7 @@ export class AuthService {
             id: row.id,
             fullName: row.full_name,
             email: row.email,
-            avatarUrl: (row.avatar_url as string | null) ?? null,
+            avatarUrl,
             role: row.role,
             status: row.status,
           },
@@ -224,7 +268,7 @@ export class AuthService {
       (supabaseUser.user_metadata?.full_name as string) ??
       (supabaseUser.user_metadata?.name as string) ??
       email.split('@')[0];
-    const avatarUrl = (supabaseUser.user_metadata?.avatar_url as string) ?? null;
+    const avatarUrl = this.resolveAvatarUrl(null, supabaseUser, email);
     const provider = supabaseUser.app_metadata?.provider as string | undefined;
 
     const insertPayload: Record<string, unknown> = {
@@ -352,13 +396,20 @@ export class AuthService {
       );
     }
 
+    const avatarUrl = this.resolveAvatarUrl(row.avatar_url as string | null, data.user, row.email as string);
+
+    // Persist avatar if it was resolved fresh
+    if (avatarUrl && avatarUrl !== row.avatar_url) {
+      await this.supabase.from('users').update({ avatar_url: avatarUrl }).eq('id', row.id as string);
+    }
+
     return {
       accessToken: this.signJwt(row.id as string, tenantId, role as 'ADMIN' | 'SUPER_ADMIN'),
       user: {
         id: row.id,
         fullName: row.full_name,
         email: row.email,
-        avatarUrl: (row.avatar_url as string | null) ?? null,
+        avatarUrl,
         role: row.role,
         status: row.status,
       },

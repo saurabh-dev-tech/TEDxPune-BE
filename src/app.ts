@@ -81,6 +81,7 @@ export async function buildApp() {
     { method: 'GET',    path: '/posts/:id/comments' },
     { method: 'POST',   path: '/posts/:id/comments' },
     // users
+    { method: 'GET',    path: '/users/directory' },
     { method: 'GET',    path: '/users' },
     { method: 'GET',    path: '/users/me' },
     { method: 'PATCH',  path: '/users/me' },
