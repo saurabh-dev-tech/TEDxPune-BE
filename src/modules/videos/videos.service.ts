@@ -18,19 +18,27 @@ const PLAYLIST_FIELDS = 'id, playlist_name, playlist_id, playlist_url, category,
 const VIDEO_FIELDS = 'id, playlist_ref_id, youtube_video_id, title, description, thumbnail_url, video_url, published_at, duration, is_active, created_at, updated_at';
 
 export interface CreatePlaylistInput {
-  playlistName: string;
-  playlistUrl: string;        // YouTube URL or raw playlist ID
+  playlistName?: string;
+  playlist_name?: string;
+  playlistUrl?: string;        // YouTube URL or raw playlist ID
+  playlist_url?: string;
   category?: string;
   displayOrder?: number;
+  display_order?: number;
   isActive?: boolean;
+  is_active?: boolean;
 }
 
 export interface UpdatePlaylistInput {
   playlistName?: string;
+  playlist_name?: string;
   playlistUrl?: string;
+  playlist_url?: string;
   category?: string;
   displayOrder?: number;
+  display_order?: number;
   isActive?: boolean;
+  is_active?: boolean;
 }
 
 export class VideosService {
@@ -49,7 +57,12 @@ export class VideosService {
   // ─── Playlist CRUD (Admin) ─────────────────────────────────────────────────
 
   async createPlaylist(tenantId: string, input: CreatePlaylistInput) {
-    const playlistId = extractPlaylistId(input.playlistUrl);
+    const url = input.playlistUrl ?? input.playlist_url ?? '';
+    const name = input.playlistName ?? input.playlist_name ?? '';
+    const order = input.displayOrder ?? input.display_order ?? 0;
+    const active = input.isActive ?? input.is_active ?? true;
+
+    const playlistId = extractPlaylistId(url);
 
     // Fetch thumbnail from YouTube if API key is available
     let thumbnailUrl: string | null = null;
@@ -61,13 +74,13 @@ export class VideosService {
       .from('youtube_playlists')
       .insert({
         tenant_id: tenantId,
-        playlist_name: input.playlistName,
+        playlist_name: name,
         playlist_id: playlistId,
-        playlist_url: input.playlistUrl,
+        playlist_url: url,
         category: input.category ?? 'General',
         thumbnail_url: thumbnailUrl,
-        display_order: input.displayOrder ?? 0,
-        is_active: input.isActive ?? true,
+        display_order: order,
+        is_active: active,
       })
       .select(PLAYLIST_FIELDS)
       .single();
@@ -79,14 +92,19 @@ export class VideosService {
   async updatePlaylist(tenantId: string, id: string, input: UpdatePlaylistInput) {
     const updates: Record<string, unknown> = {};
 
-    if (input.playlistName !== undefined) updates.playlist_name = input.playlistName;
-    if (input.category !== undefined)     updates.category = input.category;
-    if (input.displayOrder !== undefined) updates.display_order = input.displayOrder;
-    if (input.isActive !== undefined)     updates.is_active = input.isActive;
+    const name = input.playlistName ?? input.playlist_name;
+    const order = input.displayOrder ?? input.display_order;
+    const active = input.isActive ?? input.is_active;
+    const url = input.playlistUrl ?? input.playlist_url;
 
-    if (input.playlistUrl !== undefined) {
-      updates.playlist_url = input.playlistUrl;
-      updates.playlist_id = extractPlaylistId(input.playlistUrl);
+    if (name !== undefined) updates.playlist_name = name;
+    if (input.category !== undefined)     updates.category = input.category;
+    if (order !== undefined) updates.display_order = order;
+    if (active !== undefined)     updates.is_active = active;
+
+    if (url !== undefined) {
+      updates.playlist_url = url;
+      updates.playlist_id = extractPlaylistId(url);
       // Refresh thumbnail
       if (this.apiKey) {
         updates.thumbnail_url = await fetchPlaylistThumbnail(updates.playlist_id as string, this.apiKey);

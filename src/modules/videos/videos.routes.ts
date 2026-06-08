@@ -76,23 +76,54 @@ const SYNC_SECRET = process.env.SYNC_SECRET ?? '';
 
 export async function videosRoutes(fastify: FastifyInstance) {
   const svc = new VideosService(fastify.supabase, fastify.log);
+  const prefix = fastify.prefix ?? '';
+  const isAdminPrefix = prefix.endsWith('/admin/videos');
+  const adminPath = isAdminPrefix ? '/playlists' : '/admin/playlists';
+  const syncPath = isAdminPrefix ? '/sync' : '/admin/playlists/sync';
 
-  // ─── Public endpoints ────────────────────────────────────────────────────
-
-  fastify.get(
-    '/playlists',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Videos'],
-        summary: 'List active playlists',
-        security: [{ bearerAuth: [] }],
-        response: { 200: { type: 'array', items: playlistPublicSchema } },
+  // ─── Public endpoints (only if not admin-only prefix) ────────────────────
+  if (!isAdminPrefix) {
+    fastify.get(
+      '/playlists',
+      {
+        preHandler: [fastify.authenticate],
+        schema: {
+          tags: ['Videos'],
+          summary: 'List active playlists',
+          security: [{ bearerAuth: [] }],
+          response: { 200: { type: 'array', items: playlistPublicSchema } },
+        },
       },
-    },
-    async (req) => svc.listPlaylistsPublic(req.user.tenantId),
-  );
+      async (req) => svc.listPlaylistsPublic(req.user.tenantId),
+    );
 
+    fastify.get<{ Params: { videoId: string } }>(
+      '/videos/:videoId',
+      {
+        preHandler: [fastify.authenticate],
+        schema: {
+          tags: ['Videos'],
+          summary: 'Get video details',
+          security: [{ bearerAuth: [] }],
+          params: {
+            type: 'object',
+            properties: { videoId: { type: 'string' } },
+            required: ['videoId'],
+          },
+          response: { 200: videoSchema },
+        },
+      },
+      async (req, reply) => {
+        try {
+          return await svc.getVideoById(req.user.tenantId, req.params.videoId);
+        } catch (err) {
+          return fail(reply, err);
+        }
+      },
+    );
+  }
+
+  // Accessible under both public (/playlists/:id/videos) and admin (/admin/videos/playlists/:id/videos) prefixes
   fastify.get<{ Params: { id: string }; Querystring: { page?: string; limit?: string } }>(
     '/playlists/:id/videos',
     {
@@ -133,37 +164,12 @@ export async function videosRoutes(fastify: FastifyInstance) {
     },
   );
 
-  fastify.get<{ Params: { videoId: string } }>(
-    '/videos/:videoId',
-    {
-      preHandler: [fastify.authenticate],
-      schema: {
-        tags: ['Videos'],
-        summary: 'Get video details',
-        security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          properties: { videoId: { type: 'string' } },
-          required: ['videoId'],
-        },
-        response: { 200: videoSchema },
-      },
-    },
-    async (req, reply) => {
-      try {
-        return await svc.getVideoById(req.user.tenantId, req.params.videoId);
-      } catch (err) {
-        return fail(reply, err);
-      }
-    },
-  );
-
   // ─── Admin endpoints ─────────────────────────────────────────────────────
 
   const adminGuard = fastify.authorizeRoles(['ADMIN', 'SUPER_ADMIN']);
 
   fastify.get(
-    '/admin/playlists',
+    adminPath,
     {
       preHandler: [adminGuard],
       schema: {
@@ -178,14 +184,18 @@ export async function videosRoutes(fastify: FastifyInstance) {
 
   fastify.post<{
     Body: {
-      playlistName: string;
-      playlistUrl: string;
+      playlistName?: string;
+      playlist_name?: string;
+      playlistUrl?: string;
+      playlist_url?: string;
       category?: string;
       displayOrder?: number;
+      display_order?: number;
       isActive?: boolean;
+      is_active?: boolean;
     };
   }>(
-    '/admin/playlists',
+    adminPath,
     {
       preHandler: [adminGuard],
       schema: {
@@ -194,13 +204,20 @@ export async function videosRoutes(fastify: FastifyInstance) {
         security: [{ bearerAuth: [] }],
         body: {
           type: 'object',
-          required: ['playlistName', 'playlistUrl'],
+          anyOf: [
+            { required: ['playlistName', 'playlistUrl'] },
+            { required: ['playlist_name', 'playlist_url'] },
+          ],
           properties: {
             playlistName: { type: 'string', minLength: 1 },
+            playlist_name: { type: 'string', minLength: 1 },
             playlistUrl:  { type: 'string', minLength: 1, description: 'YouTube playlist URL or raw playlist ID' },
+            playlist_url:  { type: 'string', minLength: 1, description: 'YouTube playlist URL or raw playlist ID' },
             category:     { type: 'string' },
             displayOrder: { type: 'integer' },
+            display_order: { type: 'integer' },
             isActive:     { type: 'boolean' },
+            is_active:     { type: 'boolean' },
           },
         },
         response: { 201: playlistFullSchema },
@@ -220,13 +237,17 @@ export async function videosRoutes(fastify: FastifyInstance) {
     Params: { id: string };
     Body: {
       playlistName?: string;
+      playlist_name?: string;
       playlistUrl?: string;
+      playlist_url?: string;
       category?: string;
       displayOrder?: number;
+      display_order?: number;
       isActive?: boolean;
+      is_active?: boolean;
     };
   }>(
-    '/admin/playlists/:id',
+    `${adminPath}/:id`,
     {
       preHandler: [adminGuard],
       schema: {
@@ -242,10 +263,14 @@ export async function videosRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             playlistName: { type: 'string' },
+            playlist_name: { type: 'string' },
             playlistUrl:  { type: 'string' },
+            playlist_url:  { type: 'string' },
             category:     { type: 'string' },
             displayOrder: { type: 'integer' },
+            display_order: { type: 'integer' },
             isActive:     { type: 'boolean' },
+            is_active:     { type: 'boolean' },
           },
         },
         response: { 200: playlistFullSchema },
@@ -261,7 +286,7 @@ export async function videosRoutes(fastify: FastifyInstance) {
   );
 
   fastify.delete<{ Params: { id: string } }>(
-    '/admin/playlists/:id',
+    `${adminPath}/:id`,
     {
       preHandler: [adminGuard],
       schema: {
@@ -288,7 +313,7 @@ export async function videosRoutes(fastify: FastifyInstance) {
   // ─── Manual sync triggers ─────────────────────────────────────────────────
 
   fastify.post(
-    '/admin/playlists/sync',
+    syncPath,
     {
       preHandler: [adminGuard],
       schema: {
@@ -321,43 +346,45 @@ export async function videosRoutes(fastify: FastifyInstance) {
   // Called every 30 minutes by an external cron (e.g. cron-job.org, Supabase
   // Edge Function, or GitHub Actions). Pass the secret in x-sync-secret header.
 
-  fastify.post<{ Body: { tenantSlug?: string } }>(
-    '/sync',
-    {
-      schema: {
-        tags: ['Videos - Sync'],
-        summary: 'Cron: sync all playlists (protected by SYNC_SECRET)',
-        body: {
-          type: 'object',
-          properties: {
-            tenantSlug: { type: 'string', description: 'Defaults to DEFAULT_TENANT_SLUG' },
+  if (!isAdminPrefix) {
+    fastify.post<{ Body: { tenantSlug?: string } }>(
+      '/sync',
+      {
+        schema: {
+          tags: ['Videos - Sync'],
+          summary: 'Cron: sync all playlists (protected by SYNC_SECRET)',
+          body: {
+            type: 'object',
+            properties: {
+              tenantSlug: { type: 'string', description: 'Defaults to DEFAULT_TENANT_SLUG' },
+            },
           },
         },
       },
-    },
-    async (req, reply) => {
-      // Verify sync secret
-      const secret = req.headers['x-sync-secret'] as string | undefined;
-      if (!SYNC_SECRET || secret !== SYNC_SECRET) {
-        return reply.code(401).send({ error: 'Invalid or missing x-sync-secret header' });
-      }
+      async (req, reply) => {
+        // Verify sync secret
+        const secret = req.headers['x-sync-secret'] as string | undefined;
+        if (!SYNC_SECRET || secret !== SYNC_SECRET) {
+          return reply.code(401).send({ error: 'Invalid or missing x-sync-secret header' });
+        }
 
-      try {
-        const slug = req.body?.tenantSlug ?? process.env.DEFAULT_TENANT_SLUG ?? 'tedxpune';
-        const { data: tenant } = await fastify.supabase
-          .from('tenants')
-          .select('id')
-          .eq('slug', slug)
-          .eq('is_active', true)
-          .single();
+        try {
+          const slug = req.body?.tenantSlug ?? process.env.DEFAULT_TENANT_SLUG ?? 'tedxpune';
+          const { data: tenant } = await fastify.supabase
+            .from('tenants')
+            .select('id')
+            .eq('slug', slug)
+            .eq('is_active', true)
+            .single();
 
-        if (!tenant) return reply.code(404).send({ error: `Tenant '${slug}' not found` });
+          if (!tenant) return reply.code(404).send({ error: `Tenant '${slug}' not found` });
 
-        const result = await svc.syncAllPlaylists(tenant.id as string);
-        return result;
-      } catch (err) {
-        return fail(reply, err);
-      }
-    },
-  );
+          const result = await svc.syncAllPlaylists(tenant.id as string);
+          return result;
+        } catch (err) {
+          return fail(reply, err);
+        }
+      },
+    );
+  }
 }
