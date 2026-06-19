@@ -206,7 +206,7 @@ export class AuthService {
             email,
             full_name: 'Play Store Reviewer',
             role: 'USER',
-            status: 'APPROVED',
+            status: 'ACTIVE',
           })
           .select(USER_FIELDS)
           .single();
@@ -216,12 +216,12 @@ export class AuthService {
         user = created;
       } else {
         user = existing;
-        if (user.status !== 'APPROVED') {
+        if (user.status !== 'ACTIVE') {
           await this.supabase
             .from('users')
-            .update({ status: 'APPROVED' })
+            .update({ status: 'ACTIVE' })
             .eq('id', user.id);
-          user.status = 'APPROVED';
+          user.status = 'ACTIVE';
         }
       }
 
