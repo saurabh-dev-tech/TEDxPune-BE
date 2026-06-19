@@ -185,6 +185,59 @@ export class AuthService {
   async exchangeSupabaseToken(
     supabaseToken: string,
   ): Promise<{ accessToken: string; user: Record<string, unknown> }> {
+    const tenantId = await this.resolveTenantId();
+
+    // Playstore review guest bypass
+    if (supabaseToken === 'playstore-bypass-token') {
+      const email = 'playstore@tedxpune.com';
+      const { data: existing, error: lookupErr } = await this.supabase
+        .from('users')
+        .select(USER_FIELDS)
+        .eq('email', email)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      let user: any;
+      if (lookupErr || !existing) {
+        const { data: created, error: insertErr } = await this.supabase
+          .from('users')
+          .insert({
+            tenant_id: tenantId,
+            email,
+            full_name: 'Play Store Reviewer',
+            role: 'USER',
+            status: 'APPROVED',
+          })
+          .select(USER_FIELDS)
+          .single();
+        if (insertErr || !created) {
+          throw new Error('Failed to create reviewer profile: ' + insertErr?.message);
+        }
+        user = created;
+      } else {
+        user = existing;
+        if (user.status !== 'APPROVED') {
+          await this.supabase
+            .from('users')
+            .update({ status: 'APPROVED' })
+            .eq('id', user.id);
+          user.status = 'APPROVED';
+        }
+      }
+
+      return {
+        accessToken: this.signJwt(user.id, tenantId, user.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'),
+        user: {
+          id: user.id,
+          fullName: user.full_name,
+          email: user.email,
+          avatarUrl: user.avatar_url ?? null,
+          role: user.role,
+          status: user.status,
+        },
+      };
+    }
+
     // 1. Verify with Supabase Auth (service role client)
     const { data, error } = await this.supabase.auth.getUser(supabaseToken);
 
@@ -193,7 +246,6 @@ export class AuthService {
     }
 
     const supabaseUser: SupabaseUser = data.user;
-    const tenantId = await this.resolveTenantId();
 
     // 2. Try looking up by supabase_uid first (fastest path — trigger already ran)
     const { data: existing, error: lookupErr } = await this.supabase

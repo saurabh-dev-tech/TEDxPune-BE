@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const USER_FIELDS =
-  'id, tenant_id, email, full_name, avatar_url, headline, bio, location, website, role, status, created_at, updated_at';
+  'id, tenant_id, email, full_name, avatar_url, headline, bio, location, website, role, status, created_at, updated_at, linkedin, whatsapp, instagram, x';
 
 export interface UpdateProfilePayload {
   full_name?: string;
@@ -10,6 +10,10 @@ export interface UpdateProfilePayload {
   bio?:        string;
   location?:   string;
   website?:    string;
+  linkedin?:   string;
+  whatsapp?:   string;
+  instagram?:  string;
+  x?:          string;
 }
 
 export class UsersService {

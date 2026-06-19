@@ -12,6 +12,10 @@ const userSchema = {
     bio:        { type: 'string', nullable: true },
     location:   { type: 'string', nullable: true },
     website:    { type: 'string', nullable: true },
+    linkedin:   { type: 'string', nullable: true },
+    whatsapp:   { type: 'string', nullable: true },
+    instagram:  { type: 'string', nullable: true },
+    x:          { type: 'string', nullable: true },
     role:       { type: 'string' },
     status:     { type: 'string' },
     created_at: { type: 'string' },
@@ -48,6 +52,10 @@ export async function usersRoutes(fastify: FastifyInstance) {
       bio?:        string;
       location?:   string;
       website?:    string;
+      linkedin?:   string;
+      whatsapp?:   string;
+      instagram?:  string;
+      x?:          string;
     };
   }>(
     '/me',
@@ -66,6 +74,10 @@ export async function usersRoutes(fastify: FastifyInstance) {
             bio:        { type: 'string', maxLength: 500  },
             location:   { type: 'string', maxLength: 100  },
             website:    { type: 'string', maxLength: 255  },
+            linkedin:   { type: 'string', maxLength: 255  },
+            whatsapp:   { type: 'string', maxLength: 100  },
+            instagram:  { type: 'string', maxLength: 255  },
+            x:          { type: 'string', maxLength: 255  },
           },
           additionalProperties: false,
         },
@@ -73,10 +85,10 @@ export async function usersRoutes(fastify: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const { full_name, avatar_url, headline, bio, location, website } = req.body;
+      const { full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x } = req.body;
       try {
         return await svc.updateProfile(req.user.sub, req.user.tenantId, {
-          full_name, avatar_url, headline, bio, location, website,
+          full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x,
         });
       } catch (err: unknown) {
         const msg = (err as Error).message;
