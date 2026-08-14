@@ -166,6 +166,49 @@ curl -X PATCH http://localhost:3000/api/v1/users/me \
 
 ---
 
+### 3. Update User Consent Status (First-time Login Consent)
+```
+POST /users/me/consent
+```
+*Alias: `POST /users/consent`*
+
+**Authentication:** Required (Bearer Token)
+
+**Description:** Update the current user's consent flag. Called when a user consents during first-time login to set `consent = true`.
+
+**Request Body (Optional):**
+```json
+{
+  "consent": true
+}
+```
+
+**Response:**
+```json
+{
+  "id": "uuid",
+  "email": "user@example.com",
+  "full_name": "John Doe",
+  "consent": true,
+  "role": "USER",
+  "status": "ACTIVE"
+}
+```
+
+**Status Codes:**
+- `200 OK` - Consent updated successfully
+- `401 Unauthorized` - Token missing or invalid
+
+**Example cURL:**
+```bash
+curl -X POST http://localhost:3000/api/v1/users/me/consent \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "consent": true }'
+```
+
+---
+
 ### 3. Get User Directory
 ```
 GET /users/directory

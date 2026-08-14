@@ -29,7 +29,7 @@ const PROVIDER_COL: Record<AuthProvider, string> = {
   apple: 'apple_id',
 };
 
-const USER_FIELDS = 'id, email, full_name, avatar_url, role, status';
+const USER_FIELDS = 'id, email, full_name, avatar_url, role, status, consent';
 
 export class AuthService {
   constructor(
@@ -63,17 +63,17 @@ export class AuthService {
     return data.id as string;
   }
 
-  /**
-   * Resolve the best avatar URL for a user.
-   * Priority: existing DB value → Supabase metadata (Google/Apple) → Gravatar.
-   */
   private resolveAvatarUrl(
     dbAvatar: string | null | undefined,
     supabaseUser: SupabaseUser | null,
     email: string,
   ): string {
-    // 1. Already has a valid URL in the DB
-    if (dbAvatar && dbAvatar.startsWith('http')) return dbAvatar;
+    const isGravatar = (url: string) => url.includes('gravatar.com') || url.includes('ui-avatars.com');
+
+    // 1. Custom URL in the DB (non-fallback)
+    if (dbAvatar && dbAvatar.startsWith('http') && !isGravatar(dbAvatar)) {
+      return dbAvatar;
+    }
 
     // 2. Pull from Supabase user metadata (Google/Apple sign-in sets this)
     if (supabaseUser) {
@@ -84,7 +84,10 @@ export class AuthService {
       if (metaAvatar && metaAvatar.startsWith('http')) return metaAvatar;
     }
 
-    // 3. Gravatar fallback (works for any email, returns a generic icon if no Gravatar)
+    // 3. Fallback to existing Gravatar/fallback URL in DB if we have it
+    if (dbAvatar && dbAvatar.startsWith('http')) return dbAvatar;
+
+    // 4. Generate new Gravatar fallback
     return gravatarUrl(email);
   }
 
@@ -170,6 +173,7 @@ export class AuthService {
         avatarUrl: user.avatar_url ?? null,
         role: user.role,
         status: user.status,
+        consent: Boolean(user.consent),
       },
     };
   }
@@ -234,6 +238,7 @@ export class AuthService {
           avatarUrl: user.avatar_url ?? null,
           role: user.role,
           status: user.status,
+          consent: Boolean(user.consent),
         },
       };
     }
@@ -273,6 +278,7 @@ export class AuthService {
           avatarUrl,
           role: row.role,
           status: row.status,
+          consent: Boolean(row.consent),
         },
       };
     }
@@ -310,6 +316,7 @@ export class AuthService {
             avatarUrl,
             role: row.role,
             status: row.status,
+            consent: Boolean(row.consent),
           },
         };
       }
@@ -360,6 +367,7 @@ export class AuthService {
         avatarUrl: (newRow.avatar_url as string | null) ?? null,
         role: newRow.role,
         status: newRow.status,
+        consent: Boolean(newRow.consent),
       },
     };
   }
@@ -464,6 +472,7 @@ export class AuthService {
         avatarUrl,
         role: row.role,
         status: row.status,
+        consent: Boolean(row.consent),
       },
     };
   }

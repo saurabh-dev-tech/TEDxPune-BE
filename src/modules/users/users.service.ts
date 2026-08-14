@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const USER_FIELDS =
-  'id, tenant_id, email, full_name, avatar_url, headline, bio, location, website, role, status, created_at, updated_at, linkedin, whatsapp, instagram, x';
+  'id, tenant_id, email, full_name, avatar_url, headline, bio, location, website, role, status, created_at, updated_at, linkedin, whatsapp, instagram, x, consent';
 
 export interface UpdateProfilePayload {
   full_name?: string;
@@ -14,6 +14,7 @@ export interface UpdateProfilePayload {
   whatsapp?:   string;
   instagram?:  string;
   x?:          string;
+  consent?:    boolean;
 }
 
 export class UsersService {
@@ -51,6 +52,19 @@ export class UsersService {
       .single();
 
     if (error || !data) throw new Error(error?.message ?? 'Update failed');
+    return data;
+  }
+
+  async updateConsent(userId: string, tenantId: string, consent: boolean = true) {
+    const { data, error } = await this.supabase
+      .from('users')
+      .update({ consent })
+      .eq('id', userId)
+      .eq('tenant_id', tenantId)
+      .select(USER_FIELDS)
+      .single();
+
+    if (error || !data) throw new Error(error?.message ?? 'Consent update failed');
     return data;
   }
 

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { UsersService } from './users.service';
 
 const userSchema = {
@@ -16,6 +16,7 @@ const userSchema = {
     whatsapp:   { type: 'string', nullable: true },
     instagram:  { type: 'string', nullable: true },
     x:          { type: 'string', nullable: true },
+    consent:    { type: 'boolean' },
     role:       { type: 'string' },
     status:     { type: 'string' },
     created_at: { type: 'string' },
@@ -44,6 +45,51 @@ export async function usersRoutes(fastify: FastifyInstance) {
     },
   );
 
+  const consentHandler = async (
+    req: { user: { sub: string; tenantId: string }; body?: { consent?: boolean } },
+    reply: FastifyReply,
+  ) => {
+    try {
+      const consentVal = req.body?.consent ?? true;
+      return await svc.updateConsent(req.user.sub, req.user.tenantId, consentVal);
+    } catch (err: unknown) {
+      const msg = (err as Error).message;
+      return reply.code(500).send({ error: msg });
+    }
+  };
+
+  const consentSchema = {
+    tags: ['Users'],
+    summary: 'Update user consent status (turns consent flag to true on first login)',
+    security: [{ bearerAuth: [] }],
+    body: {
+      type: 'object',
+      properties: {
+        consent: { type: 'boolean', default: true },
+      },
+      additionalProperties: false,
+    },
+    response: { 200: userSchema },
+  };
+
+  fastify.post<{ Body: { consent?: boolean } }>(
+    '/me/consent',
+    {
+      preHandler: [fastify.authenticate],
+      schema: consentSchema,
+    },
+    consentHandler,
+  );
+
+  fastify.post<{ Body: { consent?: boolean } }>(
+    '/consent',
+    {
+      preHandler: [fastify.authenticate],
+      schema: { ...consentSchema, summary: 'Update user consent status (alias)' },
+    },
+    consentHandler,
+  );
+
   fastify.patch<{
     Body: {
       full_name?:  string;
@@ -56,6 +102,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
       whatsapp?:   string;
       instagram?:  string;
       x?:          string;
+      consent?:    boolean;
     };
   }>(
     '/me',
@@ -78,6 +125,7 @@ export async function usersRoutes(fastify: FastifyInstance) {
             whatsapp:   { type: 'string', maxLength: 100  },
             instagram:  { type: 'string', maxLength: 255  },
             x:          { type: 'string', maxLength: 255  },
+            consent:    { type: 'boolean' },
           },
           additionalProperties: false,
         },
@@ -85,10 +133,10 @@ export async function usersRoutes(fastify: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const { full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x } = req.body;
+      const { full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x, consent } = req.body;
       try {
         return await svc.updateProfile(req.user.sub, req.user.tenantId, {
-          full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x,
+          full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x, consent,
         });
       } catch (err: unknown) {
         const msg = (err as Error).message;

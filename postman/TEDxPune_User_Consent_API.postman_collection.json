@@ -1,0 +1,143 @@
+{
+  "info": {
+    "name": "TEDxPune - User Consent API",
+    "description": "Postman Collection for testing User Consent API during login.\n\nSetup:\n1. Obtain access token via `/auth/exchange` or `/auth/login`\n2. Set standard Bearer token in headers\n3. Call `POST /api/v1/users/me/consent`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000/api/v1"
+    },
+    {
+      "key": "token",
+      "value": "YOUR_BEARER_TOKEN_HERE"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Exchange Supabase Token (Get Backend JWT)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "if (res.accessToken) {",
+              "  pm.collectionVariables.set('token', res.accessToken);",
+              "  console.log('Token saved!');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"supabaseToken\": \"YOUR_SUPABASE_ACCESS_TOKEN_HERE\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/exchange",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "auth",
+            "exchange"
+          ]
+        }
+      }
+    },
+    {
+      "name": "2. Update User Consent (POST /users/me/consent)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"consent\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/users/me/consent",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "users",
+            "me",
+            "consent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "3. Update User Consent (Alias: POST /users/consent)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"consent\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/users/consent",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "users",
+            "consent"
+          ]
+        }
+      }
+    },
+    {
+      "name": "4. Get Current User Profile (Verify consent flag)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/users/me",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "users",
+            "me"
+          ]
+        }
+      }
+    }
+  ]
+}
