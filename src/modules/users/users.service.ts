@@ -83,4 +83,23 @@ export class UsersService {
     if (error) throw new Error(error.message);
     return { items: data ?? [], total: count ?? 0, page, limit };
   }
+
+  async savePushToken(userId: string, pushToken: string, platform?: string) {
+    const { data, error } = await this.supabase
+      .from('user_push_tokens')
+      .upsert(
+        {
+          user_id: userId,
+          push_token: pushToken,
+          platform: platform ?? 'unknown',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,push_token' },
+      )
+      .select('id, user_id, push_token, platform, created_at')
+      .single();
+
+    if (error) throw new Error('Failed to save push token: ' + error.message);
+    return data;
+  }
 }

@@ -68,14 +68,12 @@ export class AuthService {
     supabaseUser: SupabaseUser | null,
     email: string,
   ): string {
-    const isGravatar = (url: string) => url.includes('gravatar.com') || url.includes('ui-avatars.com');
-
-    // 1. Custom URL in the DB (non-fallback)
-    if (dbAvatar && dbAvatar.startsWith('http') && !isGravatar(dbAvatar)) {
+    // 1. If DB already has a valid image URL (Cloudinary, custom upload, etc.), preserve it!
+    if (dbAvatar && dbAvatar.startsWith('http')) {
       return dbAvatar;
     }
 
-    // 2. Pull from Supabase user metadata (Google/Apple sign-in sets this)
+    // 2. Pull from Supabase user metadata (Google/Apple sign-in avatar)
     if (supabaseUser) {
       const metaAvatar =
         (supabaseUser.user_metadata?.avatar_url as string) ??
@@ -84,15 +82,54 @@ export class AuthService {
       if (metaAvatar && metaAvatar.startsWith('http')) return metaAvatar;
     }
 
-    // 3. Fallback to existing Gravatar/fallback URL in DB if we have it
-    if (dbAvatar && dbAvatar.startsWith('http')) return dbAvatar;
-
-    // 4. Generate new Gravatar fallback
+    // 3. Fallback to generated Gravatar
     return gravatarUrl(email);
   }
 
   private signJwt(userId: string, tenantId: string, role: 'USER' | 'ADMIN' | 'SUPER_ADMIN'): string {
     return this.fastify.jwt.sign({ sub: userId, tenantId, role });
+  }
+
+  public async checkWhitelistOrUser(email: string): Promise<void> {
+    if (!email) {
+      throw Object.assign(new Error('You are not part of the tribe'), { statusCode: 403 });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 1. Check in whitelisted_users table
+    const { data: whitelisted, error: wlError } = await this.supabase
+      .from('whitelisted_users')
+      .select('Attendee Email')
+      .ilike('Attendee Email', normalizedEmail)
+      .limit(1);
+
+    if (!wlError && whitelisted && whitelisted.length > 0) {
+      return;
+    }
+
+    // 2. Check in users table
+    const { data: existingUser, error: userError } = await this.supabase
+      .from('users')
+      .select('id')
+      .ilike('email', normalizedEmail)
+      .limit(1);
+
+    if (!userError && existingUser && existingUser.length > 0) {
+      return;
+    }
+
+    this.fastify.log.warn(
+      { email: normalizedEmail, wlError, userError },
+      '[auth] checkWhitelistOrUser failed',
+    );
+
+    throw Object.assign(new Error('You are not part of the tribe'), { statusCode: 403 });
+  }
+
+
+  private async checkWhitelist(_tenantId: string, email: string): Promise<void> {
+    return this.checkWhitelistOrUser(email);
   }
 
   /**
@@ -132,7 +169,9 @@ export class AuthService {
       }
     }
 
-    // 3. New user — insert
+    // 3. New user — verify email is whitelisted before creating profile
+    await this.checkWhitelist(tenantId, profile.email);
+
     const { data: created, error } = await this.supabase
       .from('users')
       .insert({
@@ -322,7 +361,9 @@ export class AuthService {
       }
     }
 
-    // 4. Truly new user — create manually
+    // 4. Truly new user — check whitelist first
+    await this.checkWhitelist(tenantId, email);
+
     const fullName =
       (supabaseUser.user_metadata?.full_name as string) ??
       (supabaseUser.user_metadata?.name as string) ??

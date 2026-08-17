@@ -193,4 +193,122 @@ export async function adminRoutes(fastify: FastifyInstance) {
     },
     async (req) => svc.getMetrics(req.user.tenantId),
   );
+
+  // ── Whitelist Endpoints ───────────────────────────────────────────────────
+
+  fastify.get<{ Querystring: { page?: number; limit?: number; search?: string } }>(
+    '/whitelist',
+    {
+      preHandler: [adminAuth],
+      schema: {
+        tags: ['Admin'],
+        summary: 'List whitelisted users',
+        security: [{ bearerAuth: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            page: { type: 'integer', minimum: 1, default: 1 },
+            limit: { type: 'integer', minimum: 1, maximum: 500, default: 50 },
+            search: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        const { page = 1, limit = 50, search } = req.query;
+        return await svc.listWhitelistedUsers(req.user.tenantId, page, limit, search);
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
+    },
+  );
+
+  fastify.post<{ Body: { email: string; name?: string; contact?: string; invited_by?: string } }>(
+    '/whitelist',
+    {
+      preHandler: [adminAuth],
+      schema: {
+        tags: ['Admin'],
+        summary: 'Add a user to the invite-only whitelist',
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email' },
+            name: { type: 'string' },
+            contact: { type: 'string' },
+            invited_by: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await svc.addWhitelistedUser(req.user.tenantId, req.body);
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
+    },
+  );
+
+  fastify.post<{ Body: Array<{ email: string; name?: string; contact?: string; invited_by?: string }> }>(
+    '/whitelist/bulk',
+    {
+      preHandler: [adminAuth],
+      schema: {
+        tags: ['Admin'],
+        summary: 'Bulk import/add users to the whitelist (from Excel/CSV)',
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['email'],
+            properties: {
+              email: { type: 'string' },
+              name: { type: 'string' },
+              contact: { type: 'string' },
+              invited_by: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await svc.bulkAddWhitelistedUsers(req.user.tenantId, req.body);
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
+    },
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/whitelist/:id',
+    {
+      preHandler: [adminAuth],
+      schema: {
+        tags: ['Admin'],
+        summary: 'Remove a user from the whitelist',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+        response: { 204: { type: 'null' } },
+      },
+    },
+    async (req, reply) => {
+      try {
+        await svc.removeWhitelistedUser(req.params.id, req.user.tenantId);
+        return reply.code(204).send();
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
+    },
+  );
 }
+

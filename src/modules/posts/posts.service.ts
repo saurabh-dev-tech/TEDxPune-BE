@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sendPushToAllUsers } from '../../services/push-notification.service';
 
 const POST_FIELDS = `
   id, body, post_type, image_url, video_url, status, created_at, updated_at,
@@ -144,6 +145,22 @@ export class PostsService {
         throw new Error(pollErr.message ?? 'Failed to save poll options');
       }
     }
+
+    // Send async push notifications to all users (non-blocking)
+    const authorName = (post as any)?.author?.full_name ?? 'Admin';
+    const bodySnippet = payload.body
+      ? payload.body.length > 100
+        ? `${payload.body.substring(0, 97)}...`
+        : payload.body
+      : 'Check out the new post!';
+
+    sendPushToAllUsers(this.supabase, {
+      title: `New Post by ${authorName} 📢`,
+      body: bodySnippet,
+      data: { postId: post.id },
+    }).catch(err => {
+      console.error('[posts.service] Push notification trigger error:', err);
+    });
 
     return { ...post, kudos_count: 0, user_kudoed: false, poll_options: [], user_vote_option_id: null };
   }

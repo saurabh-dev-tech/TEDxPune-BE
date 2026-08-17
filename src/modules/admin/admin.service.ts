@@ -132,4 +132,109 @@ export class AdminService {
       totalLikes: likesRes.count ?? 0,
     };
   }
+
+  // ── Whitelist Management ───────────────────────────────────────────────────
+
+  async listWhitelistedUsers(_tenantId: string, page: number, limit: number, search?: string) {
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    let query = this.supabase
+      .from('whitelisted_users')
+      .select('"Registration Id", "Attendee Name", "Attendee Email", "Status", "Ticket_Name"', { count: 'exact' })
+      .range(from, to);
+
+    if (search) {
+      query = query.or(`"Attendee Email".ilike.%${search}%,"Attendee Name".ilike.%${search}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) throw new Error(error.message);
+
+    const items = (data ?? []).map((row: any) => ({
+      id: row['Registration Id'],
+      name: row['Attendee Name'],
+      email: row['Attendee Email'],
+      status: row['Status'],
+      ticketName: row['Ticket_Name'],
+    }));
+
+    return { items, total: count ?? 0, page, limit };
+  }
+
+  async addWhitelistedUser(
+    _tenantId: string,
+    payload: { email: string; name?: string; contact?: string; invited_by?: string },
+  ) {
+    const email = payload.email.trim().toLowerCase();
+    const { data, error } = await this.supabase
+      .from('whitelisted_users')
+      .upsert(
+        {
+          'Attendee Email': email,
+          'Attendee Name': payload.name ?? null,
+          'Status': 'SUCCESS',
+        },
+        { onConflict: 'Attendee Email' },
+      )
+      .select('"Registration Id", "Attendee Name", "Attendee Email", "Status", "Ticket_Name"')
+      .single();
+
+    if (error || !data) throw new Error(error?.message ?? 'Failed to add whitelisted user');
+    return {
+      id: (data as any)['Registration Id'],
+      name: (data as any)['Attendee Name'],
+      email: (data as any)['Attendee Email'],
+      status: (data as any)['Status'],
+      ticketName: (data as any)['Ticket_Name'],
+    };
+  }
+
+  async bulkAddWhitelistedUsers(
+    _tenantId: string,
+    items: Array<{ email: string; name?: string; contact?: string; invited_by?: string }>,
+  ) {
+    if (!items || items.length === 0) {
+      throw Object.assign(new Error('No entries provided'), { statusCode: 400 });
+    }
+
+    const rows = items
+      .filter(item => Boolean(item.email && item.email.trim()))
+      .map(item => ({
+        'Attendee Email': item.email.trim().toLowerCase(),
+        'Attendee Name': item.name ?? null,
+        'Status': 'SUCCESS',
+      }));
+
+    if (rows.length === 0) {
+      throw Object.assign(new Error('No valid emails provided in bulk upload payload'), { statusCode: 400 });
+    }
+
+    const { data, error } = await this.supabase
+      .from('whitelisted_users')
+      .upsert(rows, { onConflict: 'Attendee Email' })
+      .select('"Registration Id", "Attendee Name", "Attendee Email", "Status", "Ticket_Name"');
+
+    if (error) throw new Error('Bulk whitelist upsert failed: ' + error.message);
+
+    const mapped = (data ?? []).map((row: any) => ({
+      id: row['Registration Id'],
+      name: row['Attendee Name'],
+      email: row['Attendee Email'],
+      status: row['Status'],
+      ticketName: row['Ticket_Name'],
+    }));
+
+    return { insertedCount: mapped.length, items: mapped };
+  }
+
+  async removeWhitelistedUser(id: string, _tenantId: string) {
+    const { error } = await this.supabase
+      .from('whitelisted_users')
+      .delete()
+      .eq('Registration Id', id);
+
+    if (error) throw new Error(error.message);
+  }
 }
+

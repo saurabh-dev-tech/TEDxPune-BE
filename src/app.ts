@@ -1,11 +1,13 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import { supabasePlugin } from './plugins/supabase';
 import { jwtPlugin } from './plugins/jwt';
 import { supabaseAuthPlugin } from './plugins/supabase-auth.plugin';
+import { cloudinaryPlugin } from './plugins/cloudinary';
 import { authRoutes } from './modules/auth/auth.routes';
 import { usersRoutes } from './modules/users/users.routes';
 import { postsRoutes } from './modules/posts/posts.routes';
@@ -24,6 +26,12 @@ export async function buildApp() {
   });
 
   await app.register(cors, { origin: true });
+
+  await app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    },
+  });
 
   await app.register(rateLimit, {
     max: 200,
@@ -49,6 +57,7 @@ export async function buildApp() {
   await app.register(supabasePlugin);
   await app.register(jwtPlugin);
   await app.register(supabaseAuthPlugin);
+  await app.register(cloudinaryPlugin);
 
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
   await app.register(usersRoutes, { prefix: '/api/v1/users' });
@@ -85,7 +94,10 @@ export async function buildApp() {
     { method: 'GET',    path: '/users' },
     { method: 'GET',    path: '/users/me' },
     { method: 'PATCH',  path: '/users/me' },
+    { method: 'POST',   path: '/users/me/avatar' },
+    { method: 'POST',   path: '/users/push-token' },
     { method: 'GET',    path: '/users/:id' },
+    { method: 'PATCH',  path: '/users/:id' },
     // admin
     // videos
     { method: 'GET',    path: '/videos/playlists' },
@@ -108,6 +120,10 @@ export async function buildApp() {
     { method: 'GET',    path: '/admin/posts' },
     { method: 'DELETE', path: '/admin/posts/:id' },
     { method: 'GET',    path: '/admin/metrics' },
+    { method: 'GET',    path: '/admin/whitelist' },
+    { method: 'POST',   path: '/admin/whitelist' },
+    { method: 'POST',   path: '/admin/whitelist/bulk' },
+    { method: 'DELETE', path: '/admin/whitelist/:id' },
   ];
 
   for (const { method, path } of shimRoutes) {

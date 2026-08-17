@@ -90,6 +90,47 @@ export async function usersRoutes(fastify: FastifyInstance) {
     consentHandler,
   );
 
+  fastify.post(
+    '/me/avatar',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Users'],
+        summary: 'Upload user profile photo to Cloudinary',
+        security: [{ bearerAuth: [] }],
+        response: { 200: userSchema },
+      },
+    },
+    async (req, reply) => {
+      const data = await req.file();
+      if (!data) {
+        return reply.code(400).send({ error: 'No image file provided' });
+      }
+
+      if (!data.mimetype.startsWith('image/')) {
+        return reply.code(400).send({ error: 'Uploaded file must be an image' });
+      }
+
+      const fileBuffer = await data.toBuffer();
+      const publicId = `avatar_${req.user.sub}_${Date.now()}`;
+
+      try {
+        const uploadResult = await fastify.cloudinary.uploadImage(fileBuffer, {
+          publicId,
+        });
+
+        const updatedUser = await svc.updateProfile(req.user.sub, req.user.tenantId, {
+          avatar_url: uploadResult.secure_url,
+        });
+
+        return updatedUser;
+      } catch (err: unknown) {
+        const msg = (err as Error).message;
+        return reply.code(500).send({ error: `Avatar upload failed: ${msg}` });
+      }
+    },
+  );
+
   fastify.patch<{
     Body: {
       full_name?:  string;
@@ -178,6 +219,96 @@ export async function usersRoutes(fastify: FastifyInstance) {
       const page = req.query.page ?? 1;
       const limit = req.query.limit ?? 20;
       return svc.listActive(req.user.tenantId, page, limit);
+    },
+  );
+
+  fastify.post<{ Body: { pushToken: string; platform?: string } }>(
+    '/push-token',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Users'],
+        summary: 'Register Expo push notification token',
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          required: ['pushToken'],
+          properties: {
+            pushToken: { type: 'string' },
+            platform: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        const { pushToken, platform } = req.body;
+        return await svc.savePushToken(req.user.sub, pushToken, platform);
+      } catch (err: unknown) {
+        return reply.code(500).send({ error: (err as Error).message });
+      }
+    },
+  );
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: {
+      full_name?:  string;
+      avatar_url?: string;
+      headline?:   string;
+      bio?:        string;
+      location?:   string;
+      website?:    string;
+      linkedin?:   string;
+      whatsapp?:   string;
+      instagram?:  string;
+      x?:          string;
+      consent?:    boolean;
+    };
+  }>(
+    '/:id',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Users'],
+        summary: 'Update user profile by ID',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+        body: {
+          type: 'object',
+          properties: {
+            full_name:  { type: 'string', maxLength: 100 },
+            avatar_url: { type: 'string', maxLength: 500 },
+            headline:   { type: 'string', maxLength: 160 },
+            bio:        { type: 'string', maxLength: 500  },
+            location:   { type: 'string', maxLength: 100  },
+            website:    { type: 'string', maxLength: 255  },
+            linkedin:   { type: 'string', maxLength: 255  },
+            whatsapp:   { type: 'string', maxLength: 100  },
+            instagram:  { type: 'string', maxLength: 255  },
+            x:          { type: 'string', maxLength: 255  },
+            consent:    { type: 'boolean' },
+          },
+          additionalProperties: false,
+        },
+        response: { 200: userSchema },
+      },
+    },
+    async (req, reply) => {
+      const { full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x, consent } = req.body;
+      try {
+        return await svc.updateProfile(req.params.id, req.user.tenantId, {
+          full_name, avatar_url, headline, bio, location, website, linkedin, whatsapp, instagram, x, consent,
+        });
+      } catch (err: unknown) {
+        const msg = (err as Error).message;
+        const code = msg === 'Nothing to update' ? 400 : 500;
+        return reply.code(code).send({ error: msg });
+      }
     },
   );
 
