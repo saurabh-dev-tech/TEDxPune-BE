@@ -9,6 +9,7 @@ const POST_FIELDS = `
   id, tenant_id, body, post_type, image_url, video_url, status, created_at, updated_at,
   author:users!author_id(id, full_name, avatar_url, headline),
   kudos_agg:likes(count),
+  comments_agg:comments(count),
   poll_options(id, option_text, sort_order, votes_agg:poll_votes(count))
 `;
 
@@ -24,11 +25,17 @@ function normalisePollOptions(raw: any[]): any[] {
 }
 
 function normalisePost(raw: any): any {
+  const kudosCount = Number(raw.kudos_agg?.[0]?.count ?? 0);
+  const commentsCount = Number(raw.comments_agg?.[0]?.count ?? 0);
   return {
     ...raw,
-    kudos_count: Number(raw.kudos_agg?.[0]?.count ?? 0),
+    kudos_count: kudosCount,
+    kudosCount: kudosCount,
+    comments_count: commentsCount,
+    commentsCount: commentsCount,
     poll_options: normalisePollOptions(raw.poll_options ?? []),
     kudos_agg: undefined,
+    comments_agg: undefined,
   };
 }
 
@@ -235,6 +242,118 @@ export class AdminService {
       .eq('Registration Id', id);
 
     if (error) throw new Error(error.message);
+  }
+
+  async getPollVotes(postId: string, tenantId: string) {
+    const { data: post, error: postErr } = await this.supabase
+      .from('posts')
+      .select('id, body, post_type, poll_options(id, option_text, sort_order)')
+      .eq('id', postId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (postErr || !post) {
+      throw Object.assign(new Error('Post not found'), { statusCode: 404 });
+    }
+
+    if (post.post_type !== 'poll') {
+      throw Object.assign(new Error('Post is not a poll'), { statusCode: 400 });
+    }
+
+    const { data: votes, error: votesErr } = await this.supabase
+      .from('poll_votes')
+      .select(`
+        id,
+        created_at,
+        option_id,
+        option:poll_options!option_id(id, option_text),
+        user:users!user_id(id, full_name, email, avatar_url, headline)
+      `)
+      .eq('post_id', postId)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (votesErr) throw new Error(votesErr.message);
+
+    const optionVoteCounts = new Map<string, number>();
+    (votes ?? []).forEach((v: any) => {
+      optionVoteCounts.set(v.option_id, (optionVoteCounts.get(v.option_id) || 0) + 1);
+    });
+
+    const pollOptions = (post.poll_options ?? [])
+      .sort((a: any, b: any) => a.sort_order - b.sort_order)
+      .map((opt: any) => ({
+        id: opt.id,
+        option_text: opt.option_text,
+        sort_order: opt.sort_order,
+        vote_count: optionVoteCounts.get(opt.id) ?? 0,
+      }));
+
+    const formattedVotes = (votes ?? []).map((v: any) => ({
+      id: v.id,
+      created_at: v.created_at,
+      option_id: v.option_id,
+      option_text: v.option?.option_text ?? null,
+      user: v.user ? {
+        id: v.user.id,
+        full_name: v.user.full_name,
+        email: v.user.email,
+        avatar_url: v.user.avatar_url,
+        headline: v.user.headline,
+      } : null,
+    }));
+
+    return {
+      post_id: postId,
+      post_body: post.body,
+      total_votes: formattedVotes.length,
+      options: pollOptions,
+      votes: formattedVotes,
+    };
+  }
+
+  async getPostLikes(postId: string, tenantId: string) {
+    const { data: post, error: postErr } = await this.supabase
+      .from('posts')
+      .select('id, body')
+      .eq('id', postId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (postErr || !post) {
+      throw Object.assign(new Error('Post not found'), { statusCode: 404 });
+    }
+
+    const { data: likes, error: likesErr } = await this.supabase
+      .from('likes')
+      .select(`
+        id,
+        created_at,
+        user:users!user_id(id, full_name, email, avatar_url, headline)
+      `)
+      .eq('post_id', postId)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (likesErr) throw new Error(likesErr.message);
+
+    const formattedLikes = (likes ?? []).map((l: any) => ({
+      id: l.id,
+      created_at: l.created_at,
+      user: l.user ? {
+        id: l.user.id,
+        full_name: l.user.full_name,
+        email: l.user.email,
+        avatar_url: l.user.avatar_url,
+        headline: l.user.headline,
+      } : null,
+    }));
+
+    return {
+      post_id: postId,
+      total_likes: formattedLikes.length,
+      likes: formattedLikes,
+    };
   }
 }
 

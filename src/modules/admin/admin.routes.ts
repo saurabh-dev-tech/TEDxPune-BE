@@ -28,17 +28,20 @@ const pollOptionSchema = {
 const postSchema = {
   type: 'object',
   properties: {
-    id:          { type: 'string' },
-    body:        { type: 'string' },
-    post_type:   { type: 'string' },
-    image_url:   { type: 'string', nullable: true },
-    video_url:   { type: 'string', nullable: true },
-    status:      { type: 'string' },
-    created_at:  { type: 'string' },
-    updated_at:  { type: 'string' },
-    kudos_count: { type: 'integer' },
-    author:      authorSchema,
-    poll_options: { type: 'array', items: pollOptionSchema },
+    id:             { type: 'string' },
+    body:           { type: 'string' },
+    post_type:      { type: 'string' },
+    image_url:      { type: 'string', nullable: true },
+    video_url:      { type: 'string', nullable: true },
+    status:         { type: 'string' },
+    created_at:     { type: 'string' },
+    updated_at:     { type: 'string' },
+    kudos_count:    { type: 'integer' },
+    kudosCount:     { type: 'integer' },
+    comments_count: { type: 'integer' },
+    commentsCount:  { type: 'integer' },
+    author:         authorSchema,
+    poll_options:   { type: 'array', items: pollOptionSchema },
   },
 };
 
@@ -305,6 +308,54 @@ export async function adminRoutes(fastify: FastifyInstance) {
       try {
         await svc.removeWhitelistedUser(req.params.id, req.user.tenantId);
         return reply.code(204).send();
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
+    },
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/posts/:id/poll-votes',
+    {
+      preHandler: [adminAuth],
+      schema: {
+        tags: ['Admin'],
+        summary: 'Get detailed poll vote insights for a post',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await svc.getPollVotes(req.params.id, req.user.tenantId);
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
+    },
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/posts/:id/likes',
+    {
+      preHandler: [adminAuth],
+      schema: {
+        tags: ['Admin'],
+        summary: 'Get list of users who liked/kudoed a post',
+        security: [{ bearerAuth: [] }],
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await svc.getPostLikes(req.params.id, req.user.tenantId);
       } catch (err) {
         return handleServiceError(err, reply);
       }

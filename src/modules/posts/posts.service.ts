@@ -5,6 +5,7 @@ const POST_FIELDS = `
   id, body, post_type, image_url, video_url, status, created_at, updated_at,
   author:users!author_id(id, full_name, avatar_url, headline),
   kudos_agg:likes(count),
+  comments_agg:comments(count),
   poll_options(id, option_text, sort_order, votes_agg:poll_votes(count))
 `;
 
@@ -33,13 +34,19 @@ function normalisePollOptions(raw: any[]): any[] {
 }
 
 function normalisePost(raw: any, userKudoedSet: Set<string>, userVoteMap: Map<string, string>): any {
+  const kudosCount = Number(raw.kudos_agg?.[0]?.count ?? 0);
+  const commentsCount = Number(raw.comments_agg?.[0]?.count ?? 0);
   return {
     ...raw,
-    kudos_count: Number(raw.kudos_agg?.[0]?.count ?? 0),
+    kudos_count: kudosCount,
+    kudosCount: kudosCount,
+    comments_count: commentsCount,
+    commentsCount: commentsCount,
     user_kudoed: userKudoedSet.has(raw.id),
     user_vote_option_id: userVoteMap.get(raw.id) ?? null,
     poll_options: normalisePollOptions(raw.poll_options ?? []),
     kudos_agg: undefined,
+    comments_agg: undefined,
   };
 }
 
@@ -105,6 +112,43 @@ export class PostsService {
     };
   }
 
+  async getPostById(postId: string, tenantId: string, userId: string) {
+    const { data, error } = await this.supabase
+      .from('posts')
+      .select(POST_FIELDS)
+      .eq('id', postId)
+      .eq('tenant_id', tenantId)
+      .eq('status', 'ACTIVE')
+      .single();
+
+    if (error || !data) {
+      throw Object.assign(new Error('Post not found'), { statusCode: 404 });
+    }
+
+    const userKudoedSet = new Set<string>();
+    const userVoteMap   = new Map<string, string>();
+
+    const [{ data: kudos }, { data: votes }] = await Promise.all([
+      this.supabase
+        .from('likes')
+        .select('post_id')
+        .eq('post_id', postId)
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId),
+      this.supabase
+        .from('poll_votes')
+        .select('post_id, option_id')
+        .eq('post_id', postId)
+        .eq('user_id', userId)
+        .eq('tenant_id', tenantId),
+    ]);
+
+    if (kudos && kudos.length > 0) userKudoedSet.add(postId);
+    if (votes && votes.length > 0) userVoteMap.set(postId, votes[0].option_id);
+
+    return normalisePost(data, userKudoedSet, userVoteMap);
+  }
+
   async createPost(tenantId: string, authorId: string, payload: CreatePostPayload) {
     await this.assertUserActive(authorId, tenantId);
 
@@ -162,7 +206,7 @@ export class PostsService {
       console.error('[posts.service] Push notification trigger error:', err);
     });
 
-    return { ...post, kudos_count: 0, user_kudoed: false, poll_options: [], user_vote_option_id: null };
+    return { ...post, kudos_count: 0, kudosCount: 0, comments_count: 0, commentsCount: 0, user_kudoed: false, poll_options: [], user_vote_option_id: null };
   }
 
   async softDeletePost(postId: string, tenantId: string, requesterId: string, requesterRole: string) {
@@ -254,6 +298,11 @@ export class PostsService {
 
   async createComment(postId: string, tenantId: string, authorId: string, body: string, parentId?: string) {
     await this.assertUserActive(authorId, tenantId);
+
+    const words = body.trim().split(/\s+/).filter(Boolean);
+    if (words.length > 255) {
+      throw Object.assign(new Error('Comment exceeds maximum limit of 255 words'), { statusCode: 422 });
+    }
 
     let depth = 0;
     if (parentId) {
@@ -354,5 +403,42 @@ export class PostsService {
       .single();
 
     return normalisePost(updatedPost, new Set(), new Map());
+  }
+
+  async listPostLikes(postId: string, tenantId: string) {
+    const { data: post, error: postErr } = await this.supabase
+      .from('posts')
+      .select('id')
+      .eq('id', postId)
+      .eq('tenant_id', tenantId)
+      .single();
+
+    if (postErr || !post) {
+      throw Object.assign(new Error('Post not found'), { statusCode: 404 });
+    }
+
+    const { data: likes, error: likesErr } = await this.supabase
+      .from('likes')
+      .select(`
+        id,
+        created_at,
+        user:users!user_id(id, full_name, avatar_url, headline)
+      `)
+      .eq('post_id', postId)
+      .eq('tenant_id', tenantId)
+      .order('created_at', { ascending: false });
+
+    if (likesErr) throw new Error(likesErr.message);
+
+    return (likes ?? []).map((l: any) => ({
+      id: l.id,
+      created_at: l.created_at,
+      user: l.user ? {
+        id: l.user.id,
+        full_name: l.user.full_name,
+        avatar_url: l.user.avatar_url,
+        headline: l.user.headline,
+      } : null,
+    }));
   }
 }
