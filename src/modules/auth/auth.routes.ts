@@ -153,6 +153,40 @@ export async function authRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // ─── Verify email is whitelisted or existing user before sending OTP ─────────
+  fastify.post<{ Body: { email: string } }>(
+    '/verify-email',
+    {
+      schema: {
+        tags: ['Auth'],
+        summary: 'Verify if email is in whitelisted_users or users table',
+        body: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              allowed: { type: 'boolean' },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        await svc.checkWhitelistOrUser(req.body.email);
+        return { allowed: true };
+      } catch (err) {
+        return fail(reply, err, (err as { statusCode?: number }).statusCode ?? 403);
+      }
+    },
+  );
+
   // ─── Admin login (email + password) ──────────────────────────────────────────
   //     Available at both /auth/login and /auth/admin/login
 

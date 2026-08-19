@@ -33,6 +33,9 @@ const postSchema = {
     created_at:           { type: 'string' },
     updated_at:           { type: 'string' },
     kudos_count:          { type: 'integer' },
+    kudosCount:           { type: 'integer' },
+    comments_count:       { type: 'integer' },
+    commentsCount:        { type: 'integer' },
     user_kudoed:          { type: 'boolean' },
     user_vote_option_id:  { type: 'string', nullable: true },
     author:               authorSchema,
@@ -88,6 +91,27 @@ export async function postsRoutes(fastify: FastifyInstance) {
       const page  = req.query.page  ?? 1;
       const limit = req.query.limit ?? 20;
       return svc.listFeed(req.user.tenantId, req.user.sub, page, limit);
+    },
+  );
+
+  /* ── GET /:id — get single post by ID ── */
+  fastify.get<{ Params: { id: string } }>(
+    '/:id',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Posts'], summary: 'Get single post by ID', security: [{ bearerAuth: [] }],
+        params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
+        response: { 200: postSchema },
+      },
+    },
+    async (req, reply) => {
+      try {
+        const post = await svc.getPostById(req.params.id, req.user.tenantId, req.user.sub);
+        return reply.code(200).send(post);
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
     },
   );
 
@@ -267,7 +291,7 @@ export async function postsRoutes(fastify: FastifyInstance) {
         body: {
           type: 'object', required: ['body'],
           properties: {
-            body:     { type: 'string', minLength: 1, maxLength: 1000 },
+            body:     { type: 'string', minLength: 1, maxLength: 2000 },
             parentId: { type: 'string', format: 'uuid' },
           },
         },
@@ -280,6 +304,26 @@ export async function postsRoutes(fastify: FastifyInstance) {
           req.params.id, req.user.tenantId, req.user.sub, req.body.body, req.body.parentId,
         );
         return reply.code(201).send(comment);
+      } catch (err) {
+        return handleServiceError(err, reply);
+      }
+    },
+  );
+
+  /* ── GET /:id/likes — list users who liked/kudoed a post ── */
+  fastify.get<{ Params: { id: string } }>(
+    '/:id/likes',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        tags: ['Posts'], summary: 'List users who liked a post', security: [{ bearerAuth: [] }],
+        params: { type: 'object', required: ['id'], properties: { id: { type: 'string', format: 'uuid' } } },
+      },
+    },
+    async (req, reply) => {
+      try {
+        const likes = await svc.listPostLikes(req.params.id, req.user.tenantId);
+        return reply.code(200).send(likes);
       } catch (err) {
         return handleServiceError(err, reply);
       }
