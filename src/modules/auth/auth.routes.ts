@@ -187,6 +187,101 @@ export async function authRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // ─── Send OTP via Backend (Checks Whitelist + Triggers Supabase OTP) ─────────
+  const sendOtpHandler = async (
+    req: { body: { email: string } },
+    reply: FastifyReply,
+  ) => {
+    try {
+      return await svc.sendOtp(req.body.email);
+    } catch (err) {
+      return fail(reply, err, (err as { statusCode?: number }).statusCode ?? 400);
+    }
+  };
+
+  const sendOtpSchema = {
+    tags: ['Auth'],
+    summary: 'Check whitelist & send OTP to email',
+    description:
+      'Verifies the email exists in whitelisted_users or users table first (403 if not), ' +
+      'then instructs Supabase Auth to send an OTP email code.',
+    body: {
+      type: 'object' as const,
+      required: ['email'],
+      properties: {
+        email: { type: 'string' as const, format: 'email' },
+      },
+    },
+    response: {
+      200: {
+        type: 'object' as const,
+        properties: {
+          success: { type: 'boolean' as const },
+          message: { type: 'string' as const },
+        },
+      },
+    },
+  };
+
+  fastify.post<{ Body: { email: string } }>('/send-otp', { schema: sendOtpSchema }, sendOtpHandler);
+  fastify.post<{ Body: { email: string } }>('/otp/send', { schema: { ...sendOtpSchema, summary: 'Send OTP (alias)' } }, sendOtpHandler);
+
+  // ─── Verify OTP via Backend (Verifies OTP + Registers/Exchanges user) ────────
+  const verifyOtpHandler = async (
+    req: { body: { email: string; token?: string; code?: string } },
+    reply: FastifyReply,
+  ) => {
+    try {
+      const code = req.body.token ?? req.body.code;
+      if (!code) {
+        return fail(reply, new Error('OTP token or code is required'), 400);
+      }
+      return await svc.verifyOtp(req.body.email, code);
+    } catch (err) {
+      return fail(reply, err, (err as { statusCode?: number }).statusCode ?? 401);
+    }
+  };
+
+  const verifyOtpSchema = {
+    tags: ['Auth'],
+    summary: 'Verify OTP code and return backend JWT + User profile',
+    description:
+      'Verifies the email OTP code via Supabase Auth, registers/links the user in public.users, ' +
+      'and returns signed backend JWT + user object.',
+    body: {
+      type: 'object' as const,
+      required: ['email'],
+      properties: {
+        email: { type: 'string' as const, format: 'email' },
+        token: { type: 'string' as const, description: '6-digit OTP code' },
+        code: { type: 'string' as const, description: 'Alias for token' },
+      },
+    },
+    response: {
+      200: {
+        type: 'object' as const,
+        properties: {
+          accessToken: { type: 'string' as const },
+          user: {
+            type: 'object' as const,
+            properties: {
+              id: { type: 'string' as const },
+              fullName: { type: 'string' as const },
+              email: { type: 'string' as const },
+              avatarUrl: { type: 'string' as const, nullable: true },
+              role: { type: 'string' as const },
+              status: { type: 'string' as const },
+              consent: { type: 'boolean' as const },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  fastify.post<{ Body: { email: string; token?: string; code?: string } }>('/verify-otp', { schema: verifyOtpSchema }, verifyOtpHandler);
+  fastify.post<{ Body: { email: string; token?: string; code?: string } }>('/otp/verify', { schema: { ...verifyOtpSchema, summary: 'Verify OTP (alias)' } }, verifyOtpHandler);
+
   // ─── Admin login (email + password) ──────────────────────────────────────────
   //     Available at both /auth/login and /auth/admin/login
 

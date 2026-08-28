@@ -92,17 +92,39 @@ export class AuthService {
 
   public async checkWhitelistOrUser(email: string): Promise<void> {
     if (!email) {
-      throw Object.assign(new Error('You are not part of the tribe'), { statusCode: 403 });
+      throw Object.assign(
+        new Error('You are not part of the tribe. Only ticket holders and whitelisted members can log in'),
+        { statusCode: 403 },
+      );
     }
 
     const normalizedEmail = email.trim().toLowerCase();
 
     // 1. Check in whitelisted_users table
-    const { data: whitelisted, error: wlError } = await this.supabase
+    let whitelisted: any[] | null = null;
+    let wlError: any = null;
+
+    const res = await this.supabase
       .from('whitelisted_users')
-      .select('Attendee Email')
+      .select('"Attendee Email"')
       .ilike('Attendee Email', normalizedEmail)
       .limit(1);
+
+    whitelisted = res.data;
+    wlError = res.error;
+
+    if (wlError) {
+      // Fallback in case column is named 'email'
+      const fallback = await this.supabase
+        .from('whitelisted_users')
+        .select('email')
+        .ilike('email', normalizedEmail)
+        .limit(1);
+      if (!fallback.error) {
+        whitelisted = fallback.data;
+        wlError = null;
+      }
+    }
 
     if (!wlError && whitelisted && whitelisted.length > 0) {
       return;
@@ -124,9 +146,85 @@ export class AuthService {
       '[auth] checkWhitelistOrUser failed',
     );
 
-    throw Object.assign(new Error('You are not part of the tribe'), { statusCode: 403 });
+    throw Object.assign(
+      new Error('You are not part of the tribe. Only ticket holders and whitelisted members can log in'),
+      { statusCode: 403 },
+    );
   }
 
+  /**
+   * Send OTP via Supabase Auth after verifying email is whitelisted or existing user.
+   */
+  public async sendOtp(email: string): Promise<{ success: boolean; message: string }> {
+    if (!email) {
+      throw Object.assign(new Error('Email is required'), { statusCode: 400 });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 1. Check whitelist or existing user first
+    await this.checkWhitelistOrUser(normalizedEmail);
+
+    // 2. Instruct Supabase Auth to send OTP code to email
+    const { error } = await this.supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: { shouldCreateUser: true },
+    });
+
+    if (error) {
+      this.fastify.log.error({ err: error, email: normalizedEmail }, '[auth/sendOtp] Failed');
+      throw Object.assign(new Error(error.message || 'Failed to send OTP'), { statusCode: 500 });
+    }
+
+    return {
+      success: true,
+      message: 'OTP sent successfully',
+    };
+  }
+
+  /**
+   * Verify OTP via Supabase Auth and return backend JWT + user profile.
+   * Creates or registers the user in public.users table if new.
+   */
+  public async verifyOtp(
+    email: string,
+    token: string,
+  ): Promise<{ accessToken: string; user: Record<string, unknown> }> {
+    if (!email || !token) {
+      throw Object.assign(new Error('Email and OTP token are required'), { statusCode: 400 });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const cleanToken = token.trim();
+
+    // 1. Verify OTP with Supabase Auth
+    let { data, error } = await this.supabase.auth.verifyOtp({
+      email: normalizedEmail,
+      token: cleanToken,
+      type: 'email',
+    });
+
+    // Fallback try with 'signup' type if 'email' type failed
+    if (error || !data.session) {
+      const fallback = await this.supabase.auth.verifyOtp({
+        email: normalizedEmail,
+        token: cleanToken,
+        type: 'signup',
+      });
+      if (fallback.data?.session) {
+        data = fallback.data;
+        error = null;
+      }
+    }
+
+    if (error || !data.session) {
+      this.fastify.log.warn({ err: error, email: normalizedEmail }, '[auth/verifyOtp] Invalid code');
+      throw Object.assign(new Error(error?.message ?? 'Invalid or expired OTP code'), { statusCode: 401 });
+    }
+
+    // 2. Exchange Supabase session for backend JWT & user registration
+    return await this.exchangeSupabaseToken(data.session.access_token);
+  }
 
   private async checkWhitelist(_tenantId: string, email: string): Promise<void> {
     return this.checkWhitelistOrUser(email);
