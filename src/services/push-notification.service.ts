@@ -13,7 +13,43 @@ export async function sendPushToAllUsers(
   supabase: SupabaseClient,
   payload: PushNotificationPayload,
 ): Promise<void> {
+  console.log('[push-notification] sendPushToAllUsers triggered with payload:', payload);
   try {
+    // 1. Save notification into database for all active users (In-App Notification Inbox)
+    const { data: users, error: usersErr } = await supabase
+      .from('users')
+      .select('id')
+      .eq('status', 'ACTIVE');
+
+    if (usersErr) {
+      console.error('[push-notification] Error fetching active users:', usersErr.message);
+    } else {
+      console.log(`[push-notification] Found ${users?.length ?? 0} active users`);
+    }
+
+    if (users && users.length > 0) {
+      const notificationRows = users.map(u => ({
+        user_id: u.id,
+        title: payload.title,
+        body: payload.body,
+        type: 'ANNOUNCEMENT',
+        data: payload.data ?? {},
+        is_read: false,
+      }));
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from('notifications')
+        .insert(notificationRows)
+        .select();
+
+      if (insertErr) {
+        console.error('[push-notification] Failed to insert in-app notifications:', insertErr.message);
+      } else {
+        console.log(`[push-notification] Successfully inserted ${inserted?.length ?? 0} notifications into DB`);
+      }
+    }
+
+    // 2. Dispatch Expo Push Banner to physical devices
     const { data: records, error } = await supabase
       .from('user_push_tokens')
       .select('push_token');
