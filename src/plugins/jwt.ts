@@ -3,6 +3,7 @@ import fastifyJwt from '@fastify/jwt';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 export interface JwtPayload {
+  userId: null;
   sub: string;
   tenantId: string;
   role: 'USER' | 'ADMIN' | 'SUPER_ADMIN';
