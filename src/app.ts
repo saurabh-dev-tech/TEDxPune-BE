@@ -13,6 +13,7 @@ import { usersRoutes } from './modules/users/users.routes';
 import { postsRoutes } from './modules/posts/posts.routes';
 import { adminRoutes } from './modules/admin/admin.routes';
 import { videosRoutes } from './modules/videos/videos.routes';
+import { blogsRoutes } from './modules/blogs/blogs.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -64,8 +65,9 @@ export async function buildApp() {
   await app.register(postsRoutes, { prefix: '/api/v1/posts' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
   await app.register(videosRoutes, { prefix: '/api/v1/videos' });
-  // Also mount under /api/v1/admin/videos so /admin/videos/playlists works
   await app.register(videosRoutes, { prefix: '/api/v1/admin/videos' });
+  await app.register(blogsRoutes, { prefix: '/api/v1/blogs' });
+  await app.register(blogsRoutes, { prefix: '/api/v1/admin/blogs' });
 
   // ── Prefix-less shims ──────────────────────────────────────────────────────
   // Mobile app calls /posts, /users, /admin, /auth/* without the /api/v1 prefix.
@@ -105,6 +107,18 @@ export async function buildApp() {
     { method: 'POST',   path: '/users/push-token' },
     { method: 'GET',    path: '/users/:id' },
     { method: 'PATCH',  path: '/users/:id' },
+    // blogs
+    { method: 'GET',    path: '/blogs' },
+    { method: 'GET',    path: '/blogs/:slugOrId' },
+    { method: 'POST',   path: '/blogs' },
+    { method: 'POST',   path: '/blogs/upload-image' },
+    { method: 'PATCH',  path: '/blogs/:id' },
+    { method: 'DELETE', path: '/blogs/:id' },
+    { method: 'GET',    path: '/admin/blogs' },
+    { method: 'POST',   path: '/admin/blogs' },
+    { method: 'POST',   path: '/admin/blogs/upload-image' },
+    { method: 'PATCH',  path: '/admin/blogs/:id' },
+    { method: 'DELETE', path: '/admin/blogs/:id' },
     // admin
     // videos
     { method: 'GET',    path: '/videos/playlists' },
